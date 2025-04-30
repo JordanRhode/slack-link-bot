@@ -84,6 +84,7 @@ def handle_set_browser(ack, command, say):
     logger.debug(f"Received set-browser command: {command}")
     ack()
     user_id = command["user_id"]
+    channel_id = command["channel_id"]
     args = command["text"].strip().split()
     
     if len(args) < 2:
@@ -106,9 +107,13 @@ To find your profile name:
         say("Please specify a profile name")
         return
     
-    user_preferences[user_id] = {"browser": browser, "profile": profile}
+    # Initialize channel preferences if not exists
+    if channel_id not in user_preferences:
+        user_preferences[channel_id] = {}
+    
+    user_preferences[channel_id][user_id] = {"browser": browser, "profile": profile}
     save_preferences(user_preferences)  # Save preferences after updating
-    say(f"Your {browser} profile has been set to: {profile}")
+    say(f"Your {browser} profile has been set to: {profile} for this channel")
 
 @app.message(re.compile(r"https?://"))
 def handle_link(message, say):
@@ -120,7 +125,11 @@ def handle_link(message, say):
         return
     
     user_id = message["user"]
-    preferences = user_preferences.get(user_id)
+    channel_id = message["channel"]
+    
+    # Get channel-specific preferences
+    channel_prefs = user_preferences.get(channel_id, {})
+    preferences = channel_prefs.get(user_id)
     
     if preferences:
         browser = preferences["browser"]
@@ -158,7 +167,7 @@ def handle_link(message, say):
             ]
         )
     else:
-        logger.debug(f"No preferences found for user {user_id}")
+        logger.debug(f"No preferences found for user {user_id} in channel {channel_id}")
         say("Please set your browser profile first using `/set-browser <browser> <profile-name>`")
 
 @app.action("open_link")

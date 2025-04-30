@@ -1,8 +1,9 @@
-import { App } from '@slack/bolt';
+import { App, ExpressReceiver, SayFn } from '@slack/bolt';
 import { config } from 'dotenv';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as path from 'path';
 
 // Load environment variables
 config();
@@ -31,6 +32,19 @@ interface ActionEvent {
   actions: Array<{
     value: string;
   }>;
+}
+
+// Shortcut event type
+interface ShortcutEvent {
+  message: {
+    text: string;
+  };
+  user: {
+    id: string;
+  };
+  channel: {
+    id: string;
+  };
 }
 
 // Constants
@@ -69,27 +83,20 @@ function savePreferences(preferences: Preferences): void {
 // Initialize preferences
 let userPreferences: Preferences = loadPreferences();
 
-// Extract URL from text
-function extractUrl(text: string): string | null {
-  console.debug('Extracting URL from text:', text);
+// Extract URLs from text
+function extractUrls(text: string): string[] {
+  console.debug('Extracting URLs from text:', text);
+  const urls: string[] = [];
   
   // Try to match Slack's labeled links <url|label>
-  const labeledLinkPattern = /<([^|>]+)(?:\|[^>]+)?>/;
-  const labeledMatch = text.match(labeledLinkPattern);
-  if (labeledMatch) {
-    const url = labeledMatch[1];
-    return url.replace(/%[0-9A-Fa-f]{2}$/, '');
+  const labeledLinkPattern = /<([^|>]+)(?:\|[^>]+)?>/g;
+  const labeledMatches = text.matchAll(labeledLinkPattern);
+  for (const match of labeledMatches) {
+    const url = match[1].replace(/%[0-9A-Fa-f]{2}$/, '');
+    urls.push(url);
   }
   
-  // If no labeled link found, look for plain URLs
-  const urlPattern = /https?:\/\/[^\s<>]+/;
-  const match = text.match(urlPattern);
-  if (match) {
-    const url = match[0];
-    return url.replace(/[.,;:<>()\[\]{}"\'|]$/, '').replace(/%[0-9A-Fa-f]{2}$/, '');
-  }
-  
-  return null;
+  return urls;
 }
 
 // Open URL in Chrome
@@ -102,6 +109,23 @@ async function openInChrome(url: string, profile: string): Promise<void> {
 async function openInEdge(url: string, profile: string): Promise<void> {
   const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
   await execAsync(`"${edgePath}" --profile-directory="${profile}" "${url}"`);
+}
+
+// Open URL in browser
+async function openUrlInBrowser(url: string, browser: 'chrome' | 'edge', profile: string, say?: SayFn): Promise<void> {
+  try {
+    if (browser === 'chrome') {
+      await openInChrome(url, profile);
+    } else {
+      await openInEdge(url, profile);
+    }
+  } catch (error) {
+    console.error('Error opening URL:', error);
+    if (say) {
+      await say('Sorry, there was an error opening the link.');
+    }
+    throw error;
+  }
 }
 
 // Handle /set-browser command
@@ -144,71 +168,76 @@ To find your profile name:
   await say(`Your ${browser} profile has been set to: ${profile} for this channel`);
 });
 
-// Handle messages containing URLs
-app.message(/https?:\/\//, async ({ message, say }) => {
-  const msg = message as unknown as MessageEvent;
-  const url = extractUrl(msg.text);
-  if (!url) return;
+// Handle message shortcut
+app.shortcut('open_link_in_profile', async ({ shortcut, ack, say }) => {
+  await ack();
   
-  const { user, channel } = msg;
+  const { message, user, channel } = shortcut as unknown as ShortcutEvent;
+  const urls = extractUrls(message.text);
+  
+  if (urls.length === 0) {
+    if (say) {
+      await say('No URLs found in the selected message.');
+    }
+    return;
+  }
   
   // Get channel-specific preferences
-  const channelPrefs = userPreferences[channel] || {};
-  const preferences = channelPrefs[user];
+  const channelPrefs = userPreferences[channel.id] || {};
+  const preferences = channelPrefs[user.id];
   
-  if (preferences) {
-    const { browser, profile } = preferences;
-    
+  if (!preferences) {
+    if (say) {
+      await say('Please set your browser profile first using `/set-browser <browser> <profile-name>`');
+    }
+    return;
+  }
+  
+  const { browser, profile } = preferences;
+  
+  // If there's only one link, open it directly
+  if (urls.length === 1) {
+    await openUrlInBrowser(urls[0], browser, profile, say);
+    return;
+  }
+  
+  // For multiple links, show buttons
+  if (say) {
     await say({
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `Found a link in your message. Click the button below to open it in your ${browser} ${profile} profile:`
+            text: `Found ${urls.length} links in the message. Click a button below to open one in your ${browser} ${profile} profile:`
           }
         },
         {
           type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: 'Open Link',
-                emoji: true
-              },
-              value: JSON.stringify({ url, browser, profile }),
-              action_id: 'open_link'
-            }
-          ]
+          elements: urls.map((url, index) => ({
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: `Open Link ${index + 1}`,
+              emoji: true
+            },
+            value: JSON.stringify({ url, browser, profile }),
+            action_id: `open_link_${index}`
+          }))
         }
       ]
     });
-  } else {
-    await say('Please set your browser profile first using `/set-browser <browser> <profile-name>`');
   }
 });
 
 // Handle button clicks
-app.action('open_link', async ({ ack, body, say }) => {
+app.action(/^open_link_\d+$/, async ({ ack, body, say }) => {
   await ack();
   
   const actionBody = body as unknown as ActionEvent;
   const { url, browser, profile } = JSON.parse(actionBody.actions[0].value);
   
-  try {
-    if (browser === 'chrome') {
-      await openInChrome(url, profile);
-    } else {
-      await openInEdge(url, profile);
-    }
-  } catch (error) {
-    console.error('Error opening URL:', error);
-    if (say) {
-      await say('Sorry, there was an error opening the link.');
-    }
-  }
+  await openUrlInBrowser(url, browser, profile, say);
 });
 
 // Start the app

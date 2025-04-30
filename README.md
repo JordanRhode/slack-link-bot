@@ -12,10 +12,13 @@ This Slack integration allows you to open links in specific browser profiles for
    - `im:history` - For reading direct messages
    - `im:write` - For sending direct messages
    - `app_mentions:read` - For receiving mentions
+   - `commands` - For slash commands
+   - `message_shortcuts` - For message shortcuts
 
 4. Create a slash command `/set-browser` in your app settings
-5. Install the app to your workspace
-6. Create a `.env` file with your Slack tokens:
+5. Add a message shortcut named "Open Link in Profile"
+6. Install the app to your workspace
+7. Create a `.env` file with your Slack tokens:
    ```
    SLACK_BOT_TOKEN=xoxb-your-bot-token
    SLACK_APP_TOKEN=xapp-your-app-token
@@ -54,8 +57,10 @@ npm run dev
    ```
    (Replace "Work" or "Personal" with your desired profile name)
 
-2. Share any URL in a channel where the bot is present or in direct messages
-3. The bot will automatically detect the link and provide a button to open it in your specified browser profile
+2. When you see a message with a link you want to open:
+   - Click the three dots (more actions) menu on the message
+   - Select "Open Link in Profile"
+   - The bot will provide a button to open the link in your specified browser profile
 
 ## Finding Your Profile Name
 

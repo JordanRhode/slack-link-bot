@@ -18,32 +18,65 @@ load_dotenv()
 # Initialize the Slack app
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 
-# Dictionary to store user preferences for browser profiles
-user_preferences = {}
+# File path for storing user preferences
+PREFERENCES_FILE = "user_preferences.json"
+
+def load_preferences():
+    """Load user preferences from JSON file"""
+    try:
+        if os.path.exists(PREFERENCES_FILE):
+            with open(PREFERENCES_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading preferences: {e}")
+    return {}
+
+def save_preferences(preferences):
+    """Save user preferences to JSON file"""
+    try:
+        with open(PREFERENCES_FILE, 'w') as f:
+            json.dump(preferences, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving preferences: {e}")
+
+# Load existing preferences
+user_preferences = load_preferences()
 
 def extract_url(text):
+    logger.debug(f"Extracting URL from text: {text}")
     """Extract URL from text using regex and clean it"""
+    # First try to match Slack's labeled links <url|label>
+    labeled_link_pattern = r'<([^|>]+)(?:\|[^>]+)?>'
+    labeled_match = re.search(labeled_link_pattern, text)
+    if labeled_match:
+        url = labeled_match.group(1)
+        # Remove any URL-encoded characters at the end
+        url = re.sub(r'%[0-9A-Fa-f]{2}$', '', url)
+        return url
+    
+    # If no labeled link found, look for plain URLs
     url_pattern = r'https?://[^\s<>]+'
     match = re.search(url_pattern, text)
     if match:
-        # Clean the URL by removing any trailing characters that aren't part of the URL
         url = match.group(0)
         # Remove any trailing punctuation or special characters
-        url = url.rstrip('.,;:<>()[]{}"\'')
+        url = url.rstrip('.,;:<>()[]{}"\'|')
+        # Remove any URL-encoded characters at the end
+        url = re.sub(r'%[0-9A-Fa-f]{2}$', '', url)
         return url
     return None
 
 def open_in_chrome(url, profile):
     """Open URL in Chrome with specified profile"""
     chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    # Use the --new-window flag and pass URL as a separate argument
-    subprocess.Popen([chrome_path, f"--profile-directory={profile}", "--new-window", url])
+    # Open in existing window by removing --new-window flag
+    subprocess.Popen([chrome_path, f"--profile-directory={profile}", url])
 
 def open_in_edge(url, profile):
     """Open URL in Edge with specified profile"""
     edge_path = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
-    # Use the --new-window flag and pass URL as a separate argument
-    subprocess.Popen([edge_path, f"--profile-directory={profile}", "--new-window", url])
+    # Open in existing window by removing --new-window flag
+    subprocess.Popen([edge_path, f"--profile-directory={profile}", url])
 
 @app.command("/set-browser")
 def handle_set_browser(ack, command, say):
@@ -74,6 +107,7 @@ To find your profile name:
         return
     
     user_preferences[user_id] = {"browser": browser, "profile": profile}
+    save_preferences(user_preferences)  # Save preferences after updating
     say(f"Your {browser} profile has been set to: {profile}")
 
 @app.message(re.compile(r"https?://"))

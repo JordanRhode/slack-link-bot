@@ -7,8 +7,12 @@ This Slack integration allows you to open links in specific browser profiles for
 1. Create a new Slack app at https://api.slack.com/apps
 2. Enable Socket Mode in your app settings
 3. Add the following bot token scopes:
-   - `chat:write`
-   - `commands`
+   - `chat:write` - For sending messages
+   - `commands` - For slash commands
+   - `im:history` - For reading direct messages
+   - `im:write` - For sending direct messages
+   - `app_mentions:read` - For receiving mentions
+
 4. Create a slash command `/set-browser` in your app settings
 5. Install the app to your workspace
 6. Create a `.env` file with your Slack tokens:
@@ -22,12 +26,21 @@ This Slack integration allows you to open links in specific browser profiles for
 1. Clone this repository
 2. Install dependencies:
    ```bash
-   pip install -r requirements.txt
+   npm install
    ```
-3. Run the application:
+3. Build the TypeScript code:
    ```bash
-   python app.py
+   npm run build
    ```
+4. Run the application:
+   ```bash
+   npm start
+   ```
+
+For development, you can use:
+```bash
+npm run dev
+```
 
 ## Usage
 
@@ -41,14 +54,21 @@ This Slack integration allows you to open links in specific browser profiles for
    ```
    (Replace "Work" or "Personal" with your desired profile name)
 
-2. Share any URL in a channel where the bot is present
-3. The bot will automatically open the link in your specified browser profile
+2. Share any URL in a channel where the bot is present or in direct messages
+3. The bot will automatically detect the link and provide a button to open it in your specified browser profile
+
+## Finding Your Profile Name
+
+1. Open your browser
+2. Type `chrome://version` (for Chrome) or `edge://version` (for Edge) in the address bar
+3. Look for "Profile Path" - the profile name is the last part (e.g., "Default", "Profile 1", etc.)
 
 ## Notes
 
 - Supports both Chrome and Microsoft Edge browsers
 - The profile name is used to identify which browser profile to use
-- Make sure your browser is installed in the default location:
+- Browser paths are set to default Windows installation locations:
   - Chrome: `C:\Program Files\Google\Chrome\Application\chrome.exe`
   - Edge: `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
-- The bot needs to be present in the channel where you want to use it 
+- Settings are channel-specific, allowing different profiles for different channels
+- Preferences are stored locally in `user_preferences.json` 
